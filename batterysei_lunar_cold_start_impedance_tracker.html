@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BatterySEI: Lunar Cold-Start Lithium-Ion Interfacial Impedance Tracker</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- MathJax Configuration & Script -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #05070d;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .formula-box {
+      background-color: #030712;
+      border: 1px solid #1f2937;
+      border-radius: 0.5rem;
+      padding: 0.85rem;
+      color: #67e8f9;
+      font-size: 0.875rem;
+      overflow-x: auto;
+      margin: 0.6rem 0;
+    }
+
+    /* Custom range slider thumb styling */
+    input[type=range] {
+      accent-color: #06b6d4;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-cyan-500/30 selection:text-cyan-200">
+
+  <!-- TOP HEADER / NAV BAR -->
+  <header class="border-b border-gray-800/80 bg-gray-950/70 backdrop-blur sticky top-0 z-50 px-4 lg:px-8 py-3.5">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/10 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
+          <i data-lucide="zap" class="w-6 h-6 text-cyan-400"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold text-white tracking-wide">BatterySEI</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-700/60 font-mono">NASA TRL-4/SBIR</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-400 border border-amber-800/60 font-mono hidden sm:inline-block">Lunar Cryo-Power</span>
+          </div>
+          <p class="text-xs text-gray-400">Lunar Cold-Start Lithium-Ion Interfacial Impedance Tracker ($f \to Z_{\text{SEI}}$)</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center gap-1.5 p-1 bg-gray-900/90 rounded-xl border border-gray-800 text-xs font-medium">
+        <button id="tabBtnSim" onclick="switchTab('sim')" class="px-3.5 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm">
+          <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+          <span>Live Sim & HUD</span>
+        </button>
+        <button id="tabBtnPhysics" onclick="switchTab('physics')" class="px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 transition-all duration-200 flex items-center gap-1.5">
+          <i data-lucide="atom" class="w-3.5 h-3.5"></i>
+          <span>Physics & Math</span>
+        </button>
+        <button id="tabBtnProposal" onclick="switchTab('proposal')" class="px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 transition-all duration-200 flex items-center gap-1.5">
+          <i data-lucide="file-check-2" class="w-3.5 h-3.5"></i>
+          <span>NASA SBIR Proposal</span>
+        </button>
+        <button id="tabBtnARR" onclick="switchTab('arr')" class="px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 transition-all duration-200 flex items-center gap-1.5">
+          <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+          <span>Commercial ARR</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN VIEWPORT CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 space-y-6">
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: LIVE SIMULATION & TELEMETRY HUD                                    -->
+    <!-- ========================================================================= -->
+    <div id="viewSim" class="space-y-6">
+      
+      <!-- Top Status Banner -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono text-xs">
+        <div class="p-3 bg-gray-900/40 rounded-xl border border-gray-800 backdrop-blur flex items-center justify-between">
+          <div class="text-gray-400">Cell Temp ($T_{\text{cell}}$):</div>
+          <div id="badgeTemp" class="text-cyan-400 font-bold text-sm">223.15 K (-50°C)</div>
+        </div>
+        <div class="p-3 bg-gray-900/40 rounded-xl border border-gray-800 backdrop-blur flex items-center justify-between">
+          <div class="text-gray-400">Interfacial $R_{\text{SEI}}$:</div>
+          <div id="badgeRsei" class="text-amber-400 font-bold text-sm">48.2 Ω·cm²</div>
+        </div>
+        <div class="p-3 bg-gray-900/40 rounded-xl border border-gray-800 backdrop-blur flex items-center justify-between">
+          <div class="text-gray-400">Interfacial Hazard:</div>
+          <div id="badgeStatus" class="px-2 py-0.5 rounded bg-rose-950/80 text-rose-400 border border-rose-800 font-bold animate-pulse">LOCKED: PRE-HEAT</div>
+        </div>
+        <div class="p-3 bg-gray-900/40 rounded-xl border border-gray-800 backdrop-blur flex items-center justify-between">
+          <div class="text-gray-400">Inverter Interlock:</div>
+          <div id="badgeInverter" class="text-rose-400 font-bold text-sm">ISOLATED (0.0 kW)</div>
+        </div>
+      </div>
+
+      <!-- Main Interactive Row: Canvas + EIS Nyquist Chart -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        
+        <!-- Left: Micro-SEI Interface Physical Canvas (7 Cols) -->
+        <div class="lg:col-span-7 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+              <h2 class="text-sm font-semibold text-gray-200">Electrode-Electrolyte Nanoscale SEI Simulation</h2>
+            </div>
+            <div class="text-[11px] font-mono text-gray-400 flex items-center gap-3">
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Li⁺ Solvated</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span> Micro-Crack Shear</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span> SEI Film</span>
+            </div>
+          </div>
+
+          <!-- Microscopic Canvas Viewport -->
+          <div class="relative w-full h-[320px] rounded-xl overflow-hidden bg-[#03050a] border border-gray-800/80">
+            <canvas id="seiCanvas" class="w-full h-full block"></canvas>
+            <div id="canvasThermalOverlay" class="absolute top-2 left-2 pointer-events-none bg-black/60 backdrop-blur border border-gray-800 text-[11px] font-mono p-2 rounded-lg space-y-0.5">
+              <div class="text-gray-400">Current Flow: <span id="teleCurrentMode" class="text-amber-300">Internal AC Pre-Heat (15A peak)</span></div>
+              <div class="text-gray-400">Lithium Plating Overpotential: <span id="teleOverpotential" class="text-emerald-400 font-semibold">-18 mV (Safe)</span></div>
+              <div class="text-gray-400">SEI Micro-Stress ($\sigma_{\text{eff}}$): <span id="teleShearStress" class="text-rose-400 font-semibold">1.42 MPa</span></div>
+            </div>
+          </div>
+
+          <!-- Simulation Caption Bar -->
+          <div class="mt-2 text-xs text-gray-400 flex items-center justify-between">
+            <span>Dynamic AC interrogation active: $0.1\,\text{Hz} \le f \le 10\,\text{kHz}$ micro-current injection</span>
+            <span class="font-mono text-cyan-400 text-[11px]" id="teleSweepFreq">Sweep: 24.5 Hz</span>
+          </div>
+        </div>
+
+        <!-- Right: Primary Diagnostic Nyquist Scatter Plot (5 Cols) -->
+        <div class="lg:col-span-5 bg-gray-900/40 border border-gray-800 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-2">
+              <i data-lucide="line-chart" class="w-4 h-4 text-cyan-400"></i>
+              <h2 class="text-sm font-semibold text-gray-200">Phase-Space: Frequency ($f$) vs. Impedance ($Z$)</h2>
+            </div>
+            <span class="text-[11px] font-mono px-2 py-0.5 bg-gray-800 text-cyan-300 rounded">Nyquist ($Z'$ vs $-Z''$)</span>
+          </div>
+          <p class="text-[11px] text-gray-400 mb-2">
+            Interfacial arc expansion at intermediate $f$ ($1\,\text{Hz} - 100\,\text{Hz}$) indicates severe cryogenic charge-transfer resistance.
+          </p>
+
+          <div class="relative w-full h-[280px]">
+            <canvas id="nyquistChart"></canvas>
+          </div>
+
+          <div class="mt-2 text-[11px] flex justify-between font-mono text-gray-400 border-t border-gray-800/80 pt-2">
+            <span class="text-emerald-400">Nominal 298K Corridor: &lt; 8 Ω·cm²</span>
+            <span class="text-rose-400">Cracking Limit: &gt; 35 Ω·cm²</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Secondary Telemetry Plots -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        
+        <!-- Plot A: Real-Time Impedance and Temperature Curve -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 backdrop-blur">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-gray-200 flex items-center gap-2">
+              <i data-lucide="thermometer-snowflake" class="w-4 h-4 text-cyan-400"></i>
+              Temporal Warming vs. Interfacial Resistance $R_{\text{SEI}}(t)$
+            </h3>
+            <span class="text-[10px] font-mono text-gray-400">Sample Rate: 250ms</span>
+          </div>
+          <div class="h-[180px] w-full">
+            <canvas id="timeSeriesChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Plot B: Power Routing State (Pre-Heater vs Main Lunar Inverter Bus) -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 backdrop-blur">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-gray-200 flex items-center gap-2">
+              <i data-lucide="cpu" class="w-4 h-4 text-amber-400"></i>
+              Autonomous Closed-Loop Power Routing Split (%)
+            </h3>
+            <span class="text-[10px] font-mono text-gray-400">Solid-State Gate Array</span>
+          </div>
+          <div class="h-[180px] w-full">
+            <canvas id="powerSplitChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Closed-Loop Control Panel -->
+      <div class="bg-gray-900/50 border border-gray-800 rounded-2xl p-5 backdrop-blur space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-800 pb-3">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i>
+              Cryogenic Cold-Start Closed-Loop Hardware Controller
+            </h3>
+            <p class="text-xs text-gray-400">Adjust planetary dawn environmental parameters or manually inject cold-soak faults.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btnAutoRecover" onclick="triggerAutoPreheat()" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-900/30 flex items-center gap-1.5 transition">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Auto Thermal Conditioning</span>
+            </button>
+            <button id="btnFaultInject" onclick="injectCryoShock()" class="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-300 text-xs font-semibold transition flex items-center gap-1.5">
+              <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+              <span>Inject -80°C Lunar Night Shock</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-1">
+          
+          <!-- Slider 1: Ambient Temperature -->
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-gray-300 font-medium">Ambient Regolith Temp:</span>
+              <span id="labelSliderTemp" class="font-mono text-cyan-400 font-semibold">223.15 K (-50°C)</span>
+            </div>
+            <input type="range" id="sliderTemp" min="173.15" max="313.15" step="1" value="223.15" class="w-full h-2 bg-gray-800 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[10px] text-gray-500 font-mono">
+              <span>173 K (-100°C)</span>
+              <span>243 K (-30°C)</span>
+              <span>313 K (+40°C)</span>
+            </div>
+          </div>
+
+          <!-- Slider 2: Micro-Frequency Sweep Current Injection Amplitude -->
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-gray-300 font-medium">EIS Micro-Perturbation Amp:</span>
+              <span id="labelSliderAmp" class="font-mono text-cyan-400 font-semibold">25 mA / cm²</span>
+            </div>
+            <input type="range" id="sliderAmp" min="5" max="100" step="5" value="25" class="w-full h-2 bg-gray-800 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[10px] text-gray-500 font-mono">
+              <span>5 mA (Passive)</span>
+              <span>50 mA</span>
+              <span>100 mA (High-SNR)</span>
+            </div>
+          </div>
+
+          <!-- Slider 3: Desired Lander Inverter Demand Load -->
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-gray-300 font-medium">Avionics Load Request:</span>
+              <span id="labelSliderLoad" class="font-mono text-amber-400 font-semibold">4.8 kW (Lander Bus)</span>
+            </div>
+            <input type="range" id="sliderLoad" min="0.5" max="10.0" step="0.1" value="4.8" class="w-full h-2 bg-gray-800 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[10px] text-gray-500 font-mono">
+              <span>0.5 kW (Standby)</span>
+              <span>5.0 kW (Ascent Prep)</span>
+              <span>10.0 kW (Full Avionics)</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: CORE PHYSICS & MATHEMATICAL MODEL                                 -->
+    <!-- ========================================================================= -->
+    <div id="viewPhysics" class="hidden space-y-6">
+      
+      <div class="border-b border-gray-800 pb-3">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2.5">
+          <i data-lucide="atom" class="w-6 h-6 text-cyan-400"></i>
+          Solid Electrolyte Interphase (SEI) Cryogenic Transport Physics
+        </h2>
+        <p class="text-sm text-gray-400 mt-1">
+          Nanoscale mechanics, Arrhenius kinetics, and equivalent electrical circuit modeling for low-temperature lithium-ion cell degradation.
+        </p>
+      </div>
+
+      <!-- 4 High-Tech Physics Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Card 1: Arrhenius Lithium Desolvation & Ion Transport -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+              <i data-lucide="activity" class="w-4 h-4"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-white">1. Interfacial Desolvation & Arrhenius Kinetics</h3>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            During lunar cold conditions (down to $-100^\circ\text{C}$), the kinetic rate-limiting step transitions from bulk liquid-state diffusion to ion desolvation through the inorganic inner SEI layer ($\text{Li}_2\text{CO}_3$, $\text{LiF}$). The interfacial charge-transfer resistance $R_{\text{ct}}$ and SEI migration resistance $R_{\text{SEI}}$ scale exponentially with absolute temperature $T$:
+          </p>
+
+          <div class="formula-box">
+            $$R_{\text{SEI}}(T) = R_0 \cdot \exp\left( \frac{E_{a,\text{SEI}}}{k_B T} \right), \quad i_0 = n F k^0 C_{\text{Li}^+}^{(1-\alpha)} \exp\left( -\frac{\Delta G^\ddagger}{R T} \right)$$
+          </div>
+
+          <p class="text-xs text-gray-400 leading-relaxed">
+            Where $E_{a,\text{SEI}} \approx 0.65\text{--}0.85\,\text{eV}$ represents the activation barrier for $\text{Li}^+$ desolvation from ethylene carbonate shells. At $223\,\text{K}$ ($-50^\circ\text{C}$), $R_{\text{SEI}}$ inflates by over $60\times$, generating lethal localized overpotentials.
+          </p>
+        </div>
+
+        <!-- Card 2: Micro-Cracking Mechanics & Metallic Li Plating -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30">
+              <i data-lucide="shield-alert" class="w-4 h-4"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-white">2. Mechanical Micro-Cracking & Plating Risk</h3>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            Imposing high step currents on cold electrodes creates severe lithium chemical potential gradients. When the anode potential drops below $0\,\text{V}$ vs. $\text{Li}/\text{Li}^+$, metallic lithium deposits as high-surface-area dendrites. Thermal contraction creates mismatch shear stress $\sigma_{\text{int}}$:
+          </p>
+
+          <div class="formula-box">
+            $$\eta_{\text{anode}} = \Phi_{\text{solid}} - \Phi_{\text{electrolyte}} - U_{\text{eq}} = \eta_{\text{ohm}} + \eta_{\text{ct}} + I_{\text{load}} R_{\text{SEI}} < 0\,\text{V}$$
+          </div>
+
+          <div class="formula-box">
+            $$\sigma_{\text{eff}} = \frac{E_{\text{SEI}}}{1 - \nu_{\text{SEI}}} (\Delta \alpha \cdot \Delta T) + \gamma \cdot \frac{d\ln V}{dt} > \sigma_{\text{fracture}}$$
+          </div>
+
+          <p class="text-xs text-gray-400 leading-relaxed">
+            If $\eta_{\text{anode}} < 0$, destructive dendrite nucleation ruptures the brittle SEI film ($\sigma_{\text{fracture}} \approx 1.2\,\text{MPa}$), initiating catastrophic runaway or permanent capacity degradation during early lunar ascent.
+          </p>
+        </div>
+
+        <!-- Card 3: Dynamic Micro-Frequency EIS Inversion -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <i data-lucide="cpu" class="w-4 h-4"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-white">3. Onboard Electrochemical Impedance Spectroscopy (EIS)</h3>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            The BatterySEI embedded firmware injects multi-sine low-amplitude perturbation current $I(t) = \sum I_k \sin(2\pi f_k t + \theta_k)$ across intermediate frequencies ($0.5\,\text{Hz} \le f \le 5\,\text{kHz}$). The complex impedance is decomposed via real-time discrete Fourier transforms:
+          </p>
+
+          <div class="formula-box">
+            $$Z(\omega) = R_{\Omega} + \frac{R_{\text{SEI}}}{1 + (j \omega R_{\text{SEI}} C_{\text{SEI}})^{\alpha_{\text{SEI}}}} + \frac{R_{\text{ct}}}{1 + (j \omega R_{\text{ct}} C_{\text{dl}})^{\alpha_{\text{dl}}}} + Z_W(\omega)$$
+          </div>
+
+          <p class="text-xs text-gray-400 leading-relaxed">
+            The characteristic intermediate arc apex occurs at $\omega_{\text{peak}} = (R_{\text{SEI}} C_{\text{SEI}})^{-1}$. Tracking the apex coordinates $[\text{Re}(Z), -\text{Im}(Z)]$ reveals real-time SEI integrity without intrusive offline laboratory bench testing.
+          </p>
+        </div>
+
+        <!-- Card 4: Hardware Substrate & Solid-State Switching Architecture -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="p-1.5 rounded-lg bg-violet-500/20 text-violet-400 border border-violet-500/30">
+              <i data-lucide="layers" class="w-4 h-4"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-white">4. Micro-Fabrication & Internal Heating Bridge</h3>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            The flight unit pairs space-grade radiation-hardened GaN-on-SiC bidirectional half-bridges with multi-layer nickel foil excitation traces embedded directly between jellyroll cell leaves. When $R_{\text{SEI}} > R_{\text{critical}}$, high-frequency AC excitation ($10\,\text{kHz}$) drives internal Joule heating:
+          </p>
+
+          <div class="formula-box">
+            $$\dot{Q}_{\text{internal}} = I_{\text{AC,rms}}^2 \cdot R_{\Omega}(T) + \frac{1}{2} C_{\text{SEI}} V_{\text{AC}}^2 \cdot \omega \tan(\delta)$$
+          </div>
+
+          <p class="text-xs text-gray-400 leading-relaxed">
+            Uniform volumetric heating heats the core at $12.4^\circ\text{C}/\text{min}$ from inside out without consuming external radioisotope heating units, preserving nominal cell lifetime across $200+$ lunar day-night cycles.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: $225,000 NASA SBIR/STTR PROPOSAL & HARDWARE TRANSITION             -->
+    <!-- ========================================================================= -->
+    <div id="viewProposal" class="hidden space-y-6">
+      
+      <!-- Solicitation Header Banner -->
+      <div class="bg-gradient-to-r from-blue-950/40 via-purple-950/20 to-gray-900/40 border border-blue-800/40 rounded-2xl p-6 backdrop-blur">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-2.5 py-0.5 rounded bg-blue-900/60 text-blue-300 border border-blue-700/60 text-xs font-mono font-semibold">NASA SBIR/STTR FY2026</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/60 text-xs font-mono">Topic: S4.04-8812</span>
+            </div>
+            <h2 class="text-xl font-bold text-white">Subtopic: Advanced Planetary Energy Storage & In-Situ Health Monitoring</h2>
+            <p class="text-xs text-gray-300 mt-1 max-w-2xl">
+              Phase I Research & Technology Development for Cryogenic Autonomous Battery Management Systems (BMS) supporting Artemis Commercial Lunar Payload Services (CLPS) landers.
+            </p>
+          </div>
+          <div class="text-right">
+            <div class="text-2xl font-bold text-cyan-400 font-mono">$225,000</div>
+            <div class="text-xs text-gray-400">Total Phase I Allocation (6 Months)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Partner Allocation & Budget Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        
+        <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 backdrop-blur">
+          <div class="flex items-center gap-2 text-cyan-400 mb-1">
+            <i data-lucide="building-2" class="w-4 h-4"></i>
+            <h3 class="text-xs font-semibold text-white">Small Business Lead (70%)</h3>
+          </div>
+          <div class="text-lg font-bold text-white font-mono mt-2">$157,500</div>
+          <p class="text-xs text-gray-400 mt-1">
+            Algorithm architecture, radiation-hardened FPGA micro-code synthesis, embedded GaN switching driver fabrication, and telemetry API development.
+          </p>
+        </div>
+
+        <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 backdrop-blur border-cyan-500/30">
+          <div class="flex items-center gap-2 text-purple-400 mb-1">
+            <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+            <h3 class="text-xs font-semibold text-white">Research Partner (30% STTR)</h3>
+          </div>
+          <div class="text-lg font-bold text-purple-300 font-mono mt-2">$67,500</div>
+          <p class="text-xs text-gray-300 mt-1 font-medium">
+            University of Central Florida (UCF) - CATER Propulsion & Cryogenic Vacuum Test Facility.
+          </p>
+          <div class="mt-2 text-[11px] text-gray-400">
+            Thermal vacuum chamber (TVAC) cell testing at $120\text{--}240\,\text{K}$ with real-time in-situ synchrotron X-ray CT validation.
+          </div>
+        </div>
+
+        <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 backdrop-blur">
+          <div class="flex items-center gap-2 text-emerald-400 mb-1">
+            <i data-lucide="rocket" class="w-4 h-4"></i>
+            <h3 class="text-xs font-semibold text-white">Phase II Transition Gate</h3>
+          </div>
+          <div class="text-lg font-bold text-emerald-300 font-mono mt-2">$1,200,000</div>
+          <p class="text-xs text-gray-400 mt-1">
+            24-month flight qualification program targeting TRL-6 integration onto a CLPS lunar payload rover or permanent descent stage.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- 6-Month Phase I Work Breakdown Structure (WBS) -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 backdrop-blur">
+        <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+          <i data-lucide="calendar" class="w-4 h-4 text-cyan-400"></i>
+          6-Month Milestone Execution Plan & Deliverables
+        </h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          
+          <div class="p-3.5 bg-gray-950/60 border border-gray-800 rounded-xl space-y-1.5">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-mono font-bold text-cyan-400">Months 1–2</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">M1</span>
+            </div>
+            <h4 class="text-xs font-semibold text-gray-200">Kinetic & SEI Cryo Modeling</h4>
+            <p class="text-[11px] text-gray-400 leading-normal">
+              Formulate 3D multi-scale electrochemical model of silicon-graphite anodes under extreme lunar thermal cycles. Calibrate baseline Arrhenius curves.
+            </p>
+          </div>
+
+          <div class="p-3.5 bg-gray-950/60 border border-gray-800 rounded-xl space-y-1.5">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-mono font-bold text-cyan-400">Months 3–4</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">M2</span>
+            </div>
+            <h4 class="text-xs font-semibold text-gray-200">Nyquist Inversion Firmware</h4>
+            <p class="text-[11px] text-gray-400 leading-normal">
+              Implement fixed-point DFT impedance extraction algorithm on an RTG4 radiation-tolerant FPGA. Achieve $&lt;10\,\text{ms}$ Nyquist arc identification.
+            </p>
+          </div>
+
+          <div class="p-3.5 bg-gray-950/60 border border-gray-800 rounded-xl space-y-1.5">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-mono font-bold text-cyan-400">Month 5</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">M3</span>
+            </div>
+            <h4 class="text-xs font-semibold text-gray-200">Closed-Loop AC Heating Demo</h4>
+            <p class="text-[11px] text-gray-400 leading-normal">
+              Hardware-in-the-loop validation of solid-state GaN current steering at UCF CATER TVAC chamber at $200\,\text{K}$. Verify 0% lithium dendrite plating.
+            </p>
+          </div>
+
+          <div class="p-3.5 bg-gray-950/60 border border-gray-800 rounded-xl space-y-1.5">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-mono font-bold text-cyan-400">Month 6</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">M4</span>
+            </div>
+            <h4 class="text-xs font-semibold text-gray-200">TRL-4 Flight Specification</h4>
+            <p class="text-[11px] text-gray-400 leading-normal">
+              Finalize Phase II payload interface control document (ICD) and deliver miniaturized space-qualifiable engineering demonstration board.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: COMMERCIAL & NATIONWIDE ARR BREAKDOWN                               -->
+    <!-- ========================================================================= -->
+    <div id="viewARR" class="hidden space-y-6">
+      
+      <!-- ARR Top Level Value Proposition -->
+      <div class="bg-gradient-to-r from-emerald-950/30 via-cyan-950/20 to-gray-900/40 border border-emerald-800/40 rounded-2xl p-6 backdrop-blur">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <span class="px-2.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 text-xs font-mono font-semibold">Civil & Terrestrial Commercialization</span>
+            <h2 class="text-xl font-bold text-white mt-1">Total Addressable Software ARR: $218.4M / year</h2>
+            <p class="text-xs text-gray-300 mt-1 max-w-2xl">
+              Preventing catastrophic sub-zero battery failure across civilian grid infrastructure, cold-weather logistics fleets, and high-latitude aerospace systems without physical pack disassembly.
+            </p>
+          </div>
+          <div class="p-4 bg-gray-950/80 border border-emerald-500/30 rounded-xl text-right">
+            <div class="text-xs text-gray-400">Enterprise Valuation (10x Multiple)</div>
+            <div class="text-2xl font-bold text-emerald-400 font-mono">$2.18 Billion</div>
+            <div class="text-[10px] text-gray-500">Tier-1 Automotive / Energy SaaS</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARR Vertical Breakdown Table -->
+      <div class="bg-gray-900/40 border border-gray-800 rounded-2xl overflow-hidden backdrop-blur">
+        <div class="p-4 border-b border-gray-800 flex justify-between items-center">
+          <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+            <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+            Commercial Market Segment ARR Projections
+          </h3>
+          <span class="text-xs font-mono text-gray-400">Model: B2B OEM Runtime Licensing + Telemetry Cloud</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-gray-950/80 text-gray-400 font-mono border-b border-gray-800">
+              <tr>
+                <th class="py-3 px-4">Commercial Vertical</th>
+                <th class="py-3 px-4">Primary Cold-Temperature Bottleneck</th>
+                <th class="py-3 px-4">Unit SaaS / Runtime Fee</th>
+                <th class="py-3 px-4">US Asset Base</th>
+                <th class="py-3 px-4 text-right">Mature ARR</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60 text-gray-300 font-mono">
+              <tr class="hover:bg-gray-800/30">
+                <td class="py-3.5 px-4 font-sans font-medium text-white flex items-center gap-2">
+                  <i data-lucide="truck" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  Cold-Chain Electric Heavy Transport
+                </td>
+                <td class="py-3.5 px-4 text-gray-400 font-sans">Class 8 EV tractor morning cold-cranking lithium dendrite punctures in Northern tier states.</td>
+                <td class="py-3.5 px-4">$180 / vehicle / yr</td>
+                <td class="py-3.5 px-4">320,000 trucks</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$57.6M</td>
+              </tr>
+              <tr class="hover:bg-gray-800/30">
+                <td class="py-3.5 px-4 font-sans font-medium text-white flex items-center gap-2">
+                  <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+                  Sub-Zero Grid BESS Storage
+                </td>
+                <td class="py-3.5 px-4 text-gray-400 font-sans">Sudden winter freeze capacity drop & thermal shock during ERCOT/MISO peak surges.</td>
+                <td class="py-3.5 px-4">$420 / MWh / yr</td>
+                <td class="py-3.5 px-4">110,000 MWh</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$46.2M</td>
+              </tr>
+              <tr class="hover:bg-gray-800/30">
+                <td class="py-3.5 px-4 font-sans font-medium text-white flex items-center gap-2">
+                  <i data-lucide="plane" class="w-3.5 h-3.5 text-blue-400"></i>
+                  Civil Aviation & High-Altitude Cargo UAVs
+                </td>
+                <td class="py-3.5 px-4 text-gray-400 font-sans">Sub-ambient cruise temperatures ($-55^\circ\text{C}$) causing abrupt drop in reserve power.</td>
+                <td class="py-3.5 px-4">$750 / aircraft / yr</td>
+                <td class="py-3.5 px-4">48,000 units</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$36.0M</td>
+              </tr>
+              <tr class="hover:bg-gray-800/30">
+                <td class="py-3.5 px-4 font-sans font-medium text-white flex items-center gap-2">
+                  <i data-lucide="car" class="w-3.5 h-3.5 text-purple-400"></i>
+                  Nordic & Northern US Passenger EVs
+                </td>
+                <td class="py-3.5 px-4 text-gray-400 font-sans">Premature battery warranty claims due to cold fast-charging without adequate pre-conditioning.</td>
+                <td class="py-3.5 px-4">$15 / car / yr (OEM)</td>
+                <td class="py-3.5 px-4">3,800,000 cars</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$57.0M</td>
+              </tr>
+              <tr class="hover:bg-gray-800/30">
+                <td class="py-3.5 px-4 font-sans font-medium text-white flex items-center gap-2">
+                  <i data-lucide="satellite" class="w-3.5 h-3.5 text-rose-400"></i>
+                  Commercial LEO / MEO Constellations
+                </td>
+                <td class="py-3.5 px-4 text-gray-400 font-sans">Eclipse cold-soaks with high transmitter load discharge spikes damaging bus life.</td>
+                <td class="py-3.5 px-4">$3,600 / sat / yr</td>
+                <td class="py-3.5 px-4">6,000 satellites</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$21.6M</td>
+              </tr>
+            </tbody>
+            <tfoot class="bg-gray-950 font-mono text-white border-t border-gray-800">
+              <tr>
+                <td colspan="4" class="py-3 px-4 text-right font-bold">Total Annual Recurring Revenue:</td>
+                <td class="py-3 px-4 text-right font-bold text-emerald-400 text-sm">$218.4M</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Detailed Industry Deep-Dive Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        
+        <!-- Deep Dive 1: Heavy Transport -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 backdrop-blur space-y-2">
+          <div class="flex items-center gap-2 text-cyan-400 font-semibold text-xs">
+            <i data-lucide="truck" class="w-4 h-4"></i>
+            Heavy Class 8 Transport Fleets
+          </div>
+          <p class="text-xs text-gray-200">
+            <strong class="text-cyan-300">Physics in 1 Sentence:</strong> When temperatures drop below $-20^\circ\text{C}$, the concentration overpotential of dense lithium intercalation increases internal cell resistance beyond the fracture toughness of fragile surface passive layers.
+          </p>
+          <p class="text-xs text-gray-400">
+            <strong class="text-gray-300">Why Others Missed This (Plain English):</strong> Legacy BMS units rely exclusively on external resistive thermal blankets that waste $15\text{--}20\%$ of stored battery charge slowly heating the aluminum casing, rather than selectively probing the nano-film impedance and directing current into high-efficiency internal self-excitation.
+          </p>
+        </div>
+
+        <!-- Deep Dive 2: Grid BESS -->
+        <div class="bg-gray-900/40 border border-gray-800 rounded-xl p-4 backdrop-blur space-y-2">
+          <div class="flex items-center gap-2 text-amber-400 font-semibold text-xs">
+            <i data-lucide="battery-charging" class="w-4 h-4"></i>
+            Utility Grid Battery Energy Storage (BESS)
+          </div>
+          <p class="text-xs text-gray-200">
+            <strong class="text-amber-300">Physics in 1 Sentence:</strong> Cryogenic grid load steps create localized non-uniform current channels across parallel cell strings, triggering irreversible localized lithium plating.
+          </p>
+          <p class="text-xs text-gray-400">
+            <strong class="text-gray-300">Why Others Missed This (Plain English):</strong> Utilities only read surface thermocouple temperature probes, remaining blind to interfacial electrochemical resistance differences inside individual cell jellyrolls until a short circuit or fire occurs.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Executive Call to Action -->
+      <div class="p-4 bg-gray-900/60 border border-cyan-500/30 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <div class="text-xs font-semibold text-white">Commercial Licensing & Strategic Integration Inquiries</div>
+          <div class="text-xs text-gray-400">Access pre-compiled firmware IP cores and evaluation devkits for aerospace and automotive tiers.</div>
+        </div>
+        <a href="mailto:support@rfwavecode.com" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs font-mono flex items-center gap-1.5 transition whitespace-nowrap">
+          <i data-lucide="mail" class="w-3.5 h-3.5"></i>
+          support@rfwavecode.com
+        </a>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-gray-800/80 bg-gray-950/60 py-3 px-4 text-center text-xs text-gray-500 font-mono">
+    BatterySEI™ | NASA SBIR Topic S4.04-8812 | University of Central Florida Research Subcontract | Confidential & Proprietary
+  </footer>
+
+  <!-- ========================================================================= -->
+  <!-- JAVASCRIPT APPLICATION CORE                                               -->
+  <!-- ========================================================================= -->
+  <script>
+    // Tab switching mapping dictionary
+    const tabMapping = {
+      'sim': { viewId: 'viewSim', btnId: 'tabBtnSim' },
+      'physics': { viewId: 'viewPhysics', btnId: 'tabBtnPhysics' },
+      'proposal': { viewId: 'viewProposal', btnId: 'tabBtnProposal' },
+      'arr': { viewId: 'viewARR', btnId: 'tabBtnARR' }
+    };
+
+    function switchTab(activeKey) {
+      Object.keys(tabMapping).forEach(key => {
+        const item = tabMapping[key];
+        const viewEl = document.getElementById(item.viewId);
+        const btnEl = document.getElementById(item.btnId);
+
+        if (key === activeKey) {
+          viewEl.classList.remove('hidden');
+          btnEl.className = 'px-3.5 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm font-semibold';
+        } else {
+          viewEl.classList.add('hidden');
+          btnEl.className = 'px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-gray-200 transition-all duration-200 flex items-center gap-1.5';
+        }
+      });
+
+      // Render math formulas on tab change
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise();
+      }
+
+      // Re-trigger layout calculations if switching back to simulation
+      if (activeKey === 'sim') {
+        setTimeout(() => {
+          resizeCanvas();
+          if (nyquistChart) nyquistChart.resize();
+          if (timeSeriesChart) timeSeriesChart.resize();
+          if (powerSplitChart) powerSplitChart.resize();
+        }, 50);
+      }
+    }
+
+    // ==========================================
+    // SYSTEM STATE & PHYSICAL SIMULATION MODEL
+    // ==========================================
+    const simState = {
+      // Environmental & Control Inputs
+      cellTemp: 223.15, // Kelvin (-50 deg C)
+      targetTemp: 278.15, // Target pre-warmed temperature (5 deg C)
+      ampSweep: 25, // mA/cm^2
+      inverterDemandLoad: 4.8, // kW
+      
+      // Dynamic Physical Metrics
+      rSEI: 48.2, // Interfacial resistance (Ohms*cm^2)
+      cSEI: 1.2e-5, // Interfacial capacitance (F/cm^2)
+      rBulk: 2.1, // Ohms*cm^2
+      inverterDeliveredLoad: 0.0, // kW
+      preheatDutyCycle: 100, // %
+      isAutoPreheatActive: true,
+      shearStress: 1.42, // MPa
+      overpotential: -18, // mV
+      
+      // Live Nyquist sweep data
+      activeFrequency: 24.5, // Hz
+      activeSweepIndex: 0,
+      
+      // Historical buffers for charts
+      timeTick: 0,
+      timeHistory: [],
+      rHistory: [],
+      tempHistory: [],
+      inverterHistory: [],
+      heaterHistory: []
+    };
+
+    // Calculate Arrhenius-derived SEI resistance
+    function computeSEIResistance(tempK) {
+      const R0 = 0.045; // baseline at high temp
+      const Ea = 0.68 * 1.602e-19; // 0.68 eV in Joules
+      const kB = 1.380649e-23;
+      // Arrhenius equation
+      const val = R0 * Math.exp(Ea / (kB * tempK));
+      return Math.min(Math.max(val, 2.5), 95.0); // Clamp to realistic bounds
+    }
+
+    // ==========================================
+    // CANVAS VISUALIZATION: NANOSCALE SEI LAYER
+    // ==========================================
+    const canvas = document.getElementById('seiCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Solvated lithium ions inside liquid electrolyte
+    const ions = [];
+    const numIons = 42;
+
+    function initIons() {
+      ions.length = 0;
+      for (let i = 0; i < numIons; i++) {
+        ions.push({
+          x: Math.random() * 600,
+          y: Math.random() * 120 + 20, // upper electrolyte region
+          vx: (Math.random() - 0.5) * 1.2,
+          vy: Math.random() * 0.8 + 0.4,
+          trapped: false,
+          radius: 3.5,
+          color: '#38bdf8'
+        });
+      }
+    }
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const w = rect.width || 600;
+      const h = rect.height || 320;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.resetTransform();
+      ctx.scale(dpr, dpr);
+    }
+
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+    });
+
+    // Animate microscopic electrode-electrolyte layer
+    function renderCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // 1. Background gradient (deep electrolyte field)
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#030712');
+      grad.addColorStop(0.5, '#04101e');
+      grad.addColorStop(1, '#020617');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Zone Y-bounds
+      const electrolyteBottom = h * 0.45;
+      const seiTop = electrolyteBottom;
+      const seiBottom = h * 0.72;
+      const anodeTop = seiBottom;
+
+      // 2. Anode Region (Bottom Slab: Graphite/Silicon Lattice)
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, anodeTop, w, h - anodeTop);
+
+      // Draw graphite atomic hexagonal planes
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1.2;
+      for (let y = anodeTop + 14; y < h; y += 18) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        for (let x = 0; x < w; x += 24) {
+          ctx.lineTo(x + 12, y + 4);
+          ctx.lineTo(x + 24, y);
+        }
+        ctx.stroke();
+      }
+
+      // Anode Title
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px "JetBrains Mono"';
+      ctx.fillText('ANODE SUBSTRATE (GRAPHITE / SILICON LATTICE)', 14, h - 14);
+
+      // 3. SEI Film Layer (Middle zone: Dynamic width & shear stress micro-cracks)
+      const seiColor = simState.rSEI > 30 ? 'rgba(245, 158, 11, 0.28)' : 'rgba(16, 185, 129, 0.22)';
+      ctx.fillStyle = seiColor;
+      ctx.fillRect(0, seiTop, w, seiBottom - seiTop);
+
+      // SEI boundary lines
+      ctx.strokeStyle = simState.rSEI > 30 ? '#f59e0b' : '#10b981';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(0, seiTop, w, seiBottom - seiTop);
+
+      // Micro-cracking depiction if shear stress is high
+      if (simState.shearStress > 1.0) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Draw 4 distinct vertical micro-crack paths through SEI
+        const crackXs = [w * 0.22, w * 0.44, w * 0.68, w * 0.88];
+        crackXs.forEach((cx, idx) => {
+          ctx.moveTo(cx, seiTop);
+          ctx.lineTo(cx + (idx % 2 === 0 ? 5 : -6), seiTop + (seiBottom - seiTop) * 0.4);
+          ctx.lineTo(cx + (idx % 2 === 0 ? -4 : 7), seiTop + (seiBottom - seiTop) * 0.8);
+          ctx.lineTo(cx + 2, seiBottom);
+        });
+        ctx.stroke();
+
+        // Warning Label for micro-cracks
+        ctx.fillStyle = '#f87171';
+        ctx.font = 'bold 9px "JetBrains Mono"';
+        ctx.fillText('CRACK PROPAGATION: HIGH DISSOLUTION RISK', crackXs[1] - 40, seiTop + 16);
+      }
+
+      // SEI Label
+      ctx.fillStyle = '#fcd34d';
+      ctx.font = '10px "JetBrains Mono"';
+      ctx.fillText(`SOLID ELECTROLYTE INTERPHASE (SEI) [R_ct = ${simState.rSEI.toFixed(1)} Ω·cm²]`, 14, seiTop + 14);
+
+      // 4. Electrolyte Region (Top)
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '10px "JetBrains Mono"';
+      ctx.fillText('LIQUID ELECTROLYTE BULK: solvated Li⁺(EC)₄ ions', 14, 24);
+
+      // Dynamic AC Heating waveform visualization
+      if (simState.preheatDutyCycle > 0) {
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        const freqWave = 0.05;
+        const waveY = 40;
+        for (let x = 0; x < w; x += 4) {
+          const y = waveY + Math.sin(x * freqWave + simState.timeTick * 0.4) * 8;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = '#67e8f9';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.fillText(`AC HEATING PERTURBATION: ${simState.preheatDutyCycle.toFixed(0)}% DUTY (10 kHz)`, w - 240, 24);
+      }
+
+      // 5. Update and render ions
+      ions.forEach(ion => {
+        // Temperature-dependent velocity factor
+        const tempSpeedMult = Math.max(0.2, (simState.cellTemp - 173) / 120);
+        ion.x += ion.vx * tempSpeedMult;
+        ion.y += ion.vy * tempSpeedMult;
+
+        // Wrap horizontal edges
+        if (ion.x < 10) ion.x = w - 10;
+        if (ion.x > w - 10) ion.x = 10;
+
+        // SEI Interaction
+        if (ion.y >= seiTop && ion.y <= seiBottom) {
+          // If SEI resistance is high, ions slow down or accumulate at the interface
+          if (simState.rSEI > 30) {
+            ion.vy = 0.15; // heavily impeded
+            ion.color = '#fb7185'; // sluggish / dangerous overpotential
+          } else {
+            ion.vy = 0.65; // smooth transport
+            ion.color = '#38bdf8';
+          }
+        } else if (ion.y > seiBottom) {
+          // Reached graphite anode - intercalated
+          ion.y = Math.random() * 40 + 20; // reset to top
+          ion.x = Math.random() * w;
+        } else {
+          ion.color = '#38bdf8';
+        }
+
+        // Draw Ion Core
+        ctx.fillStyle = ion.color;
+        ctx.beginPath();
+        ctx.arc(ion.x, ion.y, ion.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ion Halo
+        ctx.strokeStyle = ion.color;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(ion.x, ion.y, ion.radius + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+    }
+
+    // ==========================================
+    // CHART.JS: NYQUIST & TIME SERIES TELEMETRY
+    // ==========================================
+    let nyquistChart, timeSeriesChart, powerSplitChart;
+
+    // Generate theoretical semi-circle for Nyquist plot
+    function generateNyquistArc(rBulk, rSEI, points = 35) {
+      const data = [];
+      const center = rBulk + rSEI / 2;
+      const radius = rSEI / 2;
+
+      for (let i = 0; i <= points; i++) {
+        const theta = (Math.PI * i) / points; // 0 to PI
+        const zReal = center - radius * Math.cos(theta);
+        const zImag = radius * Math.sin(theta); // -Z''
+        // Corresponding frequency logarithmic distribution
+        const freq = Math.pow(10, 4 - (4 * i) / points);
+        data.push({ x: zReal, y: zImag, f: freq });
+      }
+      return data;
+    }
+
+    function initCharts() {
+      // 1. Primary Phase Space: Nyquist Plot ($Z'$ vs $-Z''$)
+      const ctxNyquist = document.getElementById('nyquistChart').getContext('2d');
+      
+      const baselineArc = generateNyquistArc(2.0, 7.5);
+      const hazardArc = generateNyquistArc(2.0, 38.0);
+      const liveArc = generateNyquistArc(simState.rBulk, simState.rSEI);
+
+      nyquistChart = new Chart(ctxNyquist, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: 'Live Interfacial Arc',
+              data: liveArc,
+              showLine: true,
+              borderColor: '#06b6d4',
+              backgroundColor: 'rgba(6, 182, 212, 0.1)',
+              borderWidth: 2.5,
+              pointRadius: 2,
+              pointHoverRadius: 4,
+              tension: 0.3
+            },
+            {
+              label: 'Nominal 298K Baseline',
+              data: baselineArc,
+              showLine: true,
+              borderColor: '#10b981',
+              borderWidth: 1.5,
+              borderDash: [4, 4],
+              pointRadius: 0
+            },
+            {
+              label: 'Cracking / Plating Threshold',
+              data: hazardArc,
+              showLine: true,
+              borderColor: '#ef4444',
+              borderWidth: 1.5,
+              borderDash: [5, 5],
+              pointRadius: 0
+            },
+            {
+              label: 'Active Interrogation Frequency',
+              data: [{ x: 18.5, y: 14.2 }],
+              pointRadius: 6,
+              pointBackgroundColor: '#f59e0b',
+              borderColor: '#fff',
+              borderWidth: 2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: "Real Impedance Z' (Ω·cm²)",
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } },
+              min: 0,
+              max: 75
+            },
+            y: {
+              title: {
+                display: true,
+                text: "-Imaginary Impedance -Z'' (Ω·cm²)",
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } },
+              min: 0,
+              max: 35
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#cbd5e1',
+                boxWidth: 10,
+                font: { size: 9, family: 'Inter' }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const pt = context.raw;
+                  return `Z': ${pt.x.toFixed(1)} Ω, -Z'': ${pt.y.toFixed(1)} Ω`;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // 2. Secondary Plot A: Time Series ($R_{\text{SEI}}$ and Temp vs Time)
+      const ctxTime = document.getElementById('timeSeriesChart').getContext('2d');
+      timeSeriesChart = new Chart(ctxTime, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'R_SEI (Ω·cm²)',
+              data: [],
+              borderColor: '#f59e0b',
+              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              yAxisID: 'yR',
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.3
+            },
+            {
+              label: 'Core Temp T (K)',
+              data: [],
+              borderColor: '#06b6d4',
+              backgroundColor: 'rgba(6, 182, 212, 0.1)',
+              yAxisID: 'yT',
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 6 }
+            },
+            yR: {
+              type: 'linear',
+              position: 'left',
+              title: { display: true, text: 'R_SEI (Ω)', color: '#f59e0b', font: { size: 9 } },
+              grid: { color: '#1e293b' },
+              ticks: { color: '#f59e0b', font: { family: 'JetBrains Mono', size: 9 } },
+              min: 0,
+              max: 80
+            },
+            yT: {
+              type: 'linear',
+              position: 'right',
+              title: { display: true, text: 'Temp (K)', color: '#06b6d4', font: { size: 9 } },
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#06b6d4', font: { family: 'JetBrains Mono', size: 9 } },
+              min: 160,
+              max: 320
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#cbd5e1', font: { size: 9 } } }
+          }
+        }
+      });
+
+      // 3. Secondary Plot B: Power Routing Split (%)
+      const ctxPower = document.getElementById('powerSplitChart').getContext('2d');
+      powerSplitChart = new Chart(ctxPower, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Internal AC Pre-Heater (%)',
+              data: [],
+              borderColor: '#f43f5e',
+              backgroundColor: 'rgba(244, 63, 94, 0.2)',
+              fill: true,
+              borderWidth: 1.8,
+              pointRadius: 0,
+              tension: 0.2
+            },
+            {
+              label: 'Lander Inverter Bus Release (%)',
+              data: [],
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.2)',
+              fill: true,
+              borderWidth: 1.8,
+              pointRadius: 0,
+              tension: 0.2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              grid: { color: '#1e293b' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 6 }
+            },
+            y: {
+              stacked: true,
+              min: 0,
+              max: 100,
+              grid: { color: '#1e293b' },
+              ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#cbd5e1', font: { size: 9 } } }
+          }
+        }
+      });
+    }
+
+    // ==========================================
+    // CLOSED LOOP SIMULATION STEP LOGIC
+    // ==========================================
+    function simulationTick() {
+      simState.timeTick++;
+
+      // 1. Thermal dynamics: Joule heating from internal AC excitation
+      if (simState.isAutoPreheatActive && simState.cellTemp < simState.targetTemp) {
+        // Effective heating rate (deg K per tick)
+        const heatingRate = 0.45 * (simState.ampSweep / 25);
+        simState.cellTemp += heatingRate;
+      } else if (!simState.isAutoPreheatActive && simState.cellTemp > 200) {
+        // Natural cryogenic radiation cooling to lunar ambient
+        simState.cellTemp -= 0.12;
+      }
+
+      // 2. Calculate updated SEI impedance from current temperature
+      simState.rSEI = computeSEIResistance(simState.cellTemp);
+
+      // 3. Autonomous state observer & Interlock logic
+      // Hazard threshold: if R_SEI > 30 Ohm-cm^2, prevent inverter load connection
+      if (simState.rSEI > 32.0) {
+        // Unsafe regime: Route 100% current to pre-heaters; lock out main inverter
+        simState.preheatDutyCycle = 100;
+        simState.inverterDeliveredLoad = 0.0;
+        simState.shearStress = 1.1 + (simState.rSEI - 30) * 0.04;
+        simState.overpotential = -18.0 - (simState.rSEI - 30) * 0.5;
+      } else if (simState.rSEI > 15.0) {
+        // Transitional warming regime: Gradual inverter ramp
+        const fraction = 1 - (simState.rSEI - 15) / 17; // 0 to 1
+        simState.preheatDutyCycle = (1 - fraction) * 100;
+        simState.inverterDeliveredLoad = simState.inverterDemandLoad * fraction;
+        simState.shearStress = 0.5 + (simState.rSEI - 15) * 0.03;
+        simState.overpotential = -2.0 - (simState.rSEI - 15) * 0.9;
+      } else {
+        // Safe nominal regime
+        simState.preheatDutyCycle = 0;
+        simState.inverterDeliveredLoad = simState.inverterDemandLoad;
+        simState.shearStress = 0.28;
+        simState.overpotential = 35.0; // Positive margin against lithium plating
+      }
+
+      // 4. Frequency sweep tracking for Nyquist
+      const sweepPoints = 35;
+      simState.activeSweepIndex = (simState.activeSweepIndex + 1) % sweepPoints;
+      simState.activeFrequency = Math.pow(10, 4 - (4 * simState.activeSweepIndex) / sweepPoints);
+
+      // 5. Update UI DOM Elements
+      updateHUD();
+
+      // 6. Push telemetry history buffers
+      if (simState.timeTick % 3 === 0) {
+        const timeLabel = `${(simState.timeTick * 0.1).toFixed(1)}s`;
+        simState.timeHistory.push(timeLabel);
+        simState.rHistory.push(simState.rSEI);
+        simState.tempHistory.push(simState.cellTemp);
+        simState.heaterHistory.push(simState.preheatDutyCycle);
+        simState.inverterHistory.push((simState.inverterDeliveredLoad / simState.inverterDemandLoad) * 100);
+
+        if (simState.timeHistory.length > 25) {
+          simState.timeHistory.shift();
+          simState.rHistory.shift();
+          simState.tempHistory.shift();
+          simState.heaterHistory.shift();
+          simState.inverterHistory.shift();
+        }
+
+        updateCharts();
+      }
+
+      // 7. Render Canvas
+      renderCanvas();
+    }
+
+    function updateHUD() {
+      // Temperature badge
+      const degC = (simState.cellTemp - 273.15).toFixed(1);
+      document.getElementById('badgeTemp').textContent = `${simState.cellTemp.toFixed(1)} K (${degC}°C)`;
+      
+      // R_SEI badge
+      document.getElementById('badgeRsei').textContent = `${simState.rSEI.toFixed(1)} Ω·cm²`;
+
+      // Status badge & Inverter badge
+      const badgeStatus = document.getElementById('badgeStatus');
+      const badgeInverter = document.getElementById('badgeInverter');
+      
+      if (simState.rSEI > 32.0) {
+        badgeStatus.className = 'px-2 py-0.5 rounded bg-rose-950/80 text-rose-400 border border-rose-800 font-bold animate-pulse text-xs';
+        badgeStatus.textContent = 'LOCKED: CRYOGENIC HAZARD';
+        badgeInverter.className = 'text-rose-400 font-bold text-sm';
+        badgeInverter.textContent = 'ISOLATED (0.0 kW)';
+      } else if (simState.rSEI > 15.0) {
+        badgeStatus.className = 'px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800 font-bold text-xs';
+        badgeStatus.textContent = 'RAMPING: THERMAL TRANSIT';
+        badgeInverter.className = 'text-amber-400 font-bold text-sm';
+        badgeInverter.textContent = `THROTTLED (${simState.inverterDeliveredLoad.toFixed(1)} kW)`;
+      } else {
+        badgeStatus.className = 'px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800 font-bold text-xs';
+        badgeStatus.textContent = 'ONLINE: FULL BUS RELEASE';
+        badgeInverter.className = 'text-emerald-400 font-bold text-sm';
+        badgeInverter.textContent = `NOMINAL (${simState.inverterDeliveredLoad.toFixed(1)} kW)`;
+      }
+
+      // Overlay metrics
+      document.getElementById('teleCurrentMode').textContent = simState.preheatDutyCycle > 0 
+        ? `Internal AC Pre-Heat (${(simState.ampSweep * 0.6).toFixed(1)}A peak)`
+        : 'Standby Low-Perturbation Sweep';
+      
+      document.getElementById('teleOverpotential').textContent = `${simState.overpotential.toFixed(0)} mV (${simState.overpotential < 0 ? 'CRITICAL PLATING RISK' : 'Safe'})`;
+      document.getElementById('teleOverpotential').className = simState.overpotential < 0 ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold';
+      
+      document.getElementById('teleShearStress').textContent = `${simState.shearStress.toFixed(2)} MPa`;
+      document.getElementById('teleSweepFreq').textContent = `Sweep: ${simState.activeFrequency.toFixed(1)} Hz`;
+    }
+
+    function updateCharts() {
+      if (!nyquistChart || !timeSeriesChart || !powerSplitChart) return;
+
+      // 1. Update Nyquist Live Arc
+      const updatedArc = generateNyquistArc(simState.rBulk, simState.rSEI);
+      nyquistChart.data.datasets[0].data = updatedArc;
+      
+      // Update glowing active frequency head
+      const activePt = updatedArc[simState.activeSweepIndex] || updatedArc[0];
+      nyquistChart.data.datasets[3].data = [activePt];
+      nyquistChart.update('none');
+
+      // 2. Update Time Series
+      timeSeriesChart.data.labels = simState.timeHistory;
+      timeSeriesChart.data.datasets[0].data = simState.rHistory;
+      timeSeriesChart.data.datasets[1].data = simState.tempHistory;
+      timeSeriesChart.update('none');
+
+      // 3. Update Power Split
+      powerSplitChart.data.labels = simState.timeHistory;
+      powerSplitChart.data.datasets[0].data = simState.heaterHistory;
+      powerSplitChart.data.datasets[1].data = simState.inverterHistory;
+      powerSplitChart.update('none');
+    }
+
+    // ==========================================
+    // INTERACTIVE CONTROLS & HANDLERS
+    // ==========================================
+    const sliderTemp = document.getElementById('sliderTemp');
+    const labelSliderTemp = document.getElementById('labelSliderTemp');
+    sliderTemp.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      simState.cellTemp = val;
+      const degC = (val - 273.15).toFixed(1);
+      labelSliderTemp.textContent = `${val.toFixed(1)} K (${degC}°C)`;
+    });
+
+    const sliderAmp = document.getElementById('sliderAmp');
+    const labelSliderAmp = document.getElementById('labelSliderAmp');
+    sliderAmp.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      simState.ampSweep = val;
+      labelSliderAmp.textContent = `${val} mA / cm²`;
+    });
+
+    const sliderLoad = document.getElementById('sliderLoad');
+    const labelSliderLoad = document.getElementById('labelSliderLoad');
+    sliderLoad.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      simState.inverterDemandLoad = val;
+      labelSliderLoad.textContent = `${val.toFixed(1)} kW (Lander Bus)`;
+    });
+
+    function triggerAutoPreheat() {
+      simState.isAutoPreheatActive = true;
+      simState.targetTemp = 283.15; // +10 deg C
+    }
+
+    function injectCryoShock() {
+      simState.cellTemp = 193.15; // -80 deg C
+      simState.isAutoPreheatActive = false; // Disable heating to observe cold lock
+      sliderTemp.value = 193.15;
+      labelSliderTemp.textContent = `193.15 K (-80.0°C)`;
+    }
+
+    // ==========================================
+    // INITIALIZATION & LIFECYCLE
+    // ==========================================
+    window.onload = function() {
+      lucide.createIcons();
+      initIons();
+      resizeCanvas();
+      initCharts();
+
+      // Launch simulation loop (every 40ms)
+      setInterval(simulationTick, 40);
+
+      // Render initial MathJax
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise();
+      }
+    };
+  </script>
+</body>
+</html>
